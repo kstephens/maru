@@ -371,9 +371,11 @@
   `(set ,list (cons ,element ,list)))
 
 (define-form pop (list)
-  `(let* ((_list_ ,list) (_head_ (car _list_)))
-     (set ,list (cdr _list_))
-     _head_))
+(let ((_list_ (gensym)) (_head_ (gensym)))
+  `(let* ((,_list_ ,list) (,_head_ (car ,_list_)))
+     (set ,list (cdr ,_list_))
+     ,_head_))
+)
 
 ;;; iteration
 
