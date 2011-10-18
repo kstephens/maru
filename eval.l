@@ -322,7 +322,7 @@
 
 (define-function new-<symbol> (cstr)
   (let ((obj (new-bits <symbol> (size-of-structure <symbol>))))
-    (set (<symbol>-_bits obj) (strdup cstr))
+    (set (<symbol>-_bits obj) (if cstr (strdup cstr) cstr))
     obj))
 
 (define-function new-<pair> (head tail)
@@ -460,7 +460,11 @@
   (set (<buffer>-position buf) (- (<buffer>-position buf) 1))
   (<buffer>-contents buf))
 
+(define-function gensym ()
+  (new-<symbol> ()))
+
 (define-function intern (cstr)
+(if cstr (let ()
   (let ((list symbols))
     (while (is <pair> list)
       (let ((sym (get_head list)))
@@ -471,6 +475,7 @@
     (gc-protect (sym)
       (set symbols (new-<pair> sym symbols))
       sym)))
+  (gensym)))
 
 (define-function is_octal (c)		(and (<= ?0 c) (<= c ?7)))
 
@@ -638,7 +643,11 @@
 					  (printf "\\%03o" c))
 					(set i (+ 1 i)))
 				      (printf "\"")))))
-      ((= type <symbol>)	(printf "%s" (get <symbol> _bits obj)))
+      ((= type <symbol>)	(let ((b (get <symbol> _bits obj)))
+                                   (if b 
+				       (printf "%s" (get <symbol> _bits obj))
+				       (printf "#<symbol %p>" obj))
+				     ))
       ((= type <pair>)		(let ()
 				  (printf "(")
 				  (while (and (is <pair> obj) (!= globals obj))
@@ -1198,6 +1207,9 @@
       (and (is <symbol> arg)
 	   (new-<string> (get <symbol> _bits arg))))))
 
+(define-function subr_gensym (args env)
+  (gensym))
+
 (define-function subr_long_string (args env)
   (let ((arg (k_car args)))
     (if (is <string> arg)
@@ -1318,6 +1330,7 @@
   (define-subr  "set-string-at"		subr_set_string_at)
   (define-subr  "string->symbol"	subr_string_symbol)
   (define-subr  "symbol->string"	subr_symbol_string)
+  (define-subr  "gensym"                subr_gensym)
   (define-subr  "long->string"		subr_long_string)
   (define-subr  "current-environment"	subr_current_environment)
 

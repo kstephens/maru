@@ -739,7 +739,7 @@ static int stringLength(oop string)
   return getLong(get(string, String,size));
 }
 
-static oop newSymbol(char *cstr)	{ oop obj= newBits(Symbol);	set(obj, Symbol,bits, strdup(cstr));			return obj; }
+static oop newSymbol(char *cstr)	{ oop obj= newBits(Symbol);	set(obj, Symbol,bits, cstr ? strdup(cstr) : cstr);			return obj; }
 static oop newPair(oop head, oop tail)	{ oop obj= newOops(Pair);	set(obj, Pair,head, head);  set(obj, Pair,tail, tail);	return obj; }
 
 static oop newArray(int tally)
@@ -817,9 +817,15 @@ static oop newSubr(imp_t imp, char *name)
 
 static oop newBool(int b)		{ return b ? s_t : nil; }
 
+static oop gensym()
+{
+  return newSymbol(0);
+}
+
 static oop intern(char *cstr)
 {
   oop list= nil;
+  if ( ! cstr ) return gensym();
   for (list= symbols;  is(Pair, list);  list= getTail(list)) {
     oop sym= getHead(list);
     if (!strcmp(cstr, get(sym, Symbol,bits))) return sym;
@@ -1226,7 +1232,14 @@ static void doprint(FILE *stream, oop obj, int storing)
       }
       break;
     }
-    case Symbol:	fprintf(stream, "%s", get(obj, Symbol,bits));	break;
+    case Symbol: {
+      char *name = get(obj, Symbol, bits);
+      if ( name ) 
+        fprintf(stream, "%s", name);
+      else
+        fprintf(stream, "#<symbol %p>", (void*) obj);
+      break;
+    }
     case Pair: {
       fprintf(stream, "(");
       for (;;) {
@@ -2037,6 +2050,11 @@ static subr(symbol_string)
   return newString(get(arg, Symbol,bits));
 }
 
+static subr(gensym)
+{
+  return gensym();
+}
+
 static subr(long_string)
 {
   oop arg= car(args);				if (is(String, arg)) return arg;  if (!is(Long, arg)) return nil;
@@ -2245,6 +2263,7 @@ int main(int argc, char **argv)
       { " set-string-at",  subr_set_string_at },
       { " symbol->string", subr_symbol_string },
       { " string->symbol", subr_string_symbol },
+      { " gensym",         subr_gensym },
       { " long->string",   subr_long_string },
       { " array",	   subr_array },
       { " array?",	   subr_arrayP },
