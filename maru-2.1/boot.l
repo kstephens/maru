@@ -304,11 +304,12 @@
        ,type)))
 
 (define-form new (type . inits)
+(let ((_type_ (gensym)) (_self_ (gensym)))
   (let ((i -1))
-    `(let* ((_type_ ,type)
-	    (_self_ (allocate _type_ (array-at %structure-sizes _type_))))
-       ,@(map (lambda (_init_) (list 'set-oop-at '_self_ (set i (+ i 1)) _init_)) inits)
-       _self_)))
+    `(let* ((,_type_ ,type)
+	    (,_self_ (allocate ,_type_ (array-at %structure-sizes ,_type_))))
+       ,@(map (lambda (_init_) (list 'set-oop-at `,_self_ (set i (+ i 1)) _init_)) inits)
+       ,_self_))))
 
 (define-form define-class (name basis fields)
   (let ((base (eval basis)))
@@ -612,9 +613,10 @@
   `(set ,list (cons ,element ,list)))
 
 (define-form pop (list)
-  `(let* ((_list_ ,list) (_head_ (car _list_)))
-     (set ,list (cdr _list_))
-     _head_))
+(let ((_list_ (gensym)) (_head_ (gensym)))
+  `(let* ((,_list_ ,list) (,_head_ (car ,_list_)))
+     (set ,list (cdr ,_list_))
+     ,_head_)))
 
 (define-function member? (key list)
   (while (and (pair? list) (!= key (car list)))
@@ -644,18 +646,20 @@
 	 (set ,var (+ ,var ,step))))))
 
 (define-form list-do (var list . body)
-  `(let ((_list_ ,list))
-     (while _list_
-       (let ((,var (car _list_))) ,@body)
-       (set _list_ (cdr _list_)))))
+(let ((_list_ (gensym)))
+  `(let ((,_list_ ,list))
+     (while ,_list_
+       (let ((,var (car ,_list_))) ,@body)
+       (set ,_list_ (cdr ,_list_))))))
 
 (define-function %generic-do (get len var col body)
-  `(let* ((_col_ ,col)
-	  (_idx_ 0)
-	  (_end_ (,len _col_)))
-     (while (< _idx_ _end_)
-       (let ((,var (,get _col_ _idx_))) ,@body)
-       (set _idx_ (+ _idx_ 1)))))
+(let ((_col_ (gensym)) (_idx_ (gensym)) (_end_ (gensym)))
+  `(let* ((,_col_ ,col)
+	  (,_idx_ 0)
+	  (,_end_ (,len ,_col_)))
+     (while (< ,_idx_ ,_end_)
+       (let ((,var (,get ,_col_ ,_idx_))) ,@body)
+       (set ,_idx_ (+ ,_idx_ 1))))))
 
 (define-form array-do (var arr . body)	(%generic-do array-at array-length var arr body))
 
