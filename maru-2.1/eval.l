@@ -334,7 +334,7 @@
 
 (define-function new-<symbol> (cstr)
   (let ((obj (new-bits <symbol> (size-of-structure <symbol>))))
-    (set (<symbol>-_bits obj) (strdup cstr))
+    (set (<symbol>-_bits obj) (if cstr (strdup cstr) cstr))
     obj))
 
 (define-function new-<pair> (head tail)
@@ -540,7 +540,7 @@
 					  (printf "\\%03o" c))
 					(set i (+ 1 i)))
 				      (printf "\"")))))
-      ((= type <symbol>)	(printf "%s" (get <symbol> _bits obj)))
+      ((= type <symbol>)	(let ((b (get <symbol> _bits obj))) (if b (printf "%s" b) (printf "#<symbol %p>" obj)))))
       ((= type <pair>)		(let ()
 				  (printf "(")
 				  (while (and (is <pair> obj) (!= globals obj))
@@ -665,7 +665,11 @@
   (set (<buffer>-position buf) (- (<buffer>-position buf) 1))
   (<buffer>-contents buf))
 
+(define-function gensym ()
+  (new-<symbol> ()))
+
 (define-function intern (string)
+(if string (let ()
   (let ((lo 0)
 	(hi (- (k_array_length symbols) 1)))
     (while (<= lo hi)
@@ -678,6 +682,7 @@
 	  (else		(return s)))))
     (gc-let* ((s (new-<symbol> string)))
       (k_array_insert symbols lo s))))
+  (gensym)))
 
 (define-function is_octal (c)		(and (<= ?0 c) (<= c ?7)))
 
@@ -1329,8 +1334,9 @@
 	   (type (get-type arg)))
       (cond
 	((= type <string>) (fprintf stderr "%s" (get <string> _bits arg)))
-	((= type <symbol>) (fprintf stderr "%s" (get <symbol> _bits arg)))))
-    (set args (get_tail args))))
+	((= type <symbol>) (let ((b (get <symbol> _bits arg)))
+			     (if b (fprintf stderr "%s" b) (fprintf stderr "#<symbol %p>" arg)))))
+    (set args (get_tail args)))))
 
 (define-function subr_apply (args ctx)
   (k_apply (k_car args) (k_cadr args) ctx))
@@ -1456,11 +1462,12 @@
 	   (intern (get <string> _bits arg))))))
 
 (define-function subr_symbol_string (args ctx)
-  (let ((arg (k_car args)))
+  (let ((arg (k_car args)) (bits))
     (if (is <string> arg)
 	arg
       (and (is <symbol> arg)
-	   (new-<string> (get <symbol> _bits arg))))))
+	   (set bits (get <symbol> _bits arg))
+	   (new-<string> bits)))))
 
 (define-function subr_long_string (args ctx)
   (let ((arg (k_car args)))
@@ -1593,6 +1600,7 @@
   (define-subr  "type-of"		subr_type_of)
   (define-subr  "string?"		subr_stringP)
   (define-subr  "symbol?"		subr_symbolP)
+  (define-subr  "gensym"		subr_gensym)
   (define-subr  "pair?"			subr_pairP)
   (define-subr  "array?"		subr_arrayP)
   (define-subr  "car"			subr_car)
