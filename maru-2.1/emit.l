@@ -1,7 +1,8 @@
 #!./eval
 
-(define __MACH__	'(t))
-(define __WINDOWS__	'( ))
+(load "arch.l")
+;(define __MACH__	'(t))
+;(define __WINDOWS__	'( ))
 
 (define __PREFIX__ (if (or __MACH__ __WINDOWS__) "_" ""))
 
