@@ -4,7 +4,7 @@ CC32 = $(CC) -m32
 
 .SUFFIXES :
 
-all : eval
+all : eval arch.l arch.h
 
 run : eval
 	rlwrap ./eval
