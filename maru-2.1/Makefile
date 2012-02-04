@@ -9,6 +9,15 @@ all : eval
 run : eval
 	rlwrap ./eval
 
+arch.l : arch
+	./arch l > $@
+
+arch.h : arch
+	./arch h > $@
+
+arch : arch.c
+	$(CC) -g $(CFLAGS) -o $@ $<
+
 eval : eval.c gc.c gc.h buffer.c chartab.h wcs.c
 	$(CC) -g $(CFLAGS) -o eval eval.c -lm -ldl
 
