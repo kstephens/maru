@@ -166,7 +166,7 @@
   comment	= "#" (!eol .)*
                 ;
   eostmt        = (eol | ";")* ;
-  _stmt         = blank* eostmt (blank | comment)* ;
+  _stmt         = blank* eostmt __ ;
   contline      = "\\" eol ;
   _		= (blank | contline)* ;
   __            = (blank | contline | comment | eol)* ;
@@ -194,8 +194,10 @@
 		|								-> ()
 		;
 
-  identifiers   = identifier?:a (","__ identifier)*:l                           -> `(,@a ,@l) ;
-  arguments     = expression?:a (","__ expression)*:l                           -> `(,@a ,@l) ;
+  identifiers   = identifier:a (_","__ identifier)*:l                           -> `(,a ,@l) 
+                |                                                               -> '() ;
+  arguments     = expression:a (_","__ expression)*:l                           -> `(,a ,@l) 
+                |                                                               -> '() ;
 
   end           = "end"_stmt ;
 
@@ -215,10 +217,9 @@
                 | rel_expr
                 ;
 
-  rel_expr      = add_expr ; 
-#  rel_expr      = add_expr:a rel_op:op __ rel_expr:b  -> `(send ,op ,a ,b)
-#                | add_expr
-#                ;
+  rel_expr      = add_expr:a rel_op:op __ rel_expr:b  -> `(send ,op ,a ,b)
+                | add_expr
+                ;
   rel_op        = [<>=] @ $$ ;
 
   add_expr      = term_expr:a add_op:op __ add_expr:b -> `(send ,op ,a ,b)
@@ -231,16 +232,21 @@
                 ;
   term_op       = [*/%] @ $$ ;
 
-  unary_expr    = unary_op:op __ expression:e  -> `(send ,op ,e)
-                | primary_expr
+  unary_expr    = unary_op:op __ send_expr:e  -> `(send ,op ,e)
+                | send_expr
                 ;
   unary_op      = [-!~] @ $$ ;
 
-  primary_expr  = "("__ expression:e ")"_ -> e
-#               | expression:r "["__ arguments:a "]" -> `(send [] ,r ,@a)
-                | ssexpr
-#                | identifier
-                | literal
+  send_expr     = identifier:s "("__ arguments:a ")"  -> `(send ,s self ,@a)
+#                | send_expr:r "." identifier:s "(" arguments:a ")"  -> `(send ,s ,r ,@a)
+                | group_expr
+                ;
+
+  group_expr    = "("__ expression:e ")"_   -> e
+                | primary_expr
+                ;
+
+  primary_expr  = ssexpr | literal
                 ;
 
   statement     = 
@@ -259,14 +265,14 @@
   body	        = statements:s 					                -> s ;
   ssexpr        = "@(" sspace sexpression*:s ")"_					-> `(let () ,@s) ;
 
-  def           = "def"_ symbol:s parameters:a body:b end ->
+  def           = "def"_ symbol:s _ parameters:a body:b end ->
                    `(%define-method self ',s (lambda (self ,@a) ,@b))
-                | "def"_ expression:e "." symbol:s parameters:a body:b end ->
+                | "def"_ expression:e "." symbol:s _ parameters:a body:b end ->
                    `(%define-singleton-method ,e ',s (lambda (self ,@a) ,@b))
                 ;
 
-  parameters    = _ "("__ identifiers:a ")"_stmt     -> a
-                | blank+ identifiers:a _stmt         -> a
+  parameters    = "("__ identifiers:a ")"_stmt     -> a
+                | identifiers:a _stmt         -> a
                 ;
 
   typename	= capident | symbol ;
@@ -275,10 +281,10 @@
                     -> (pval `(let ((self (%define-class ,t))) ,@b))
                 | identifier:i "="_ expression:e _stmt
                     -> (pval `(define ,i ,e))
+                | def:d        -> (pval `(let ((self <undefined>)) ,d))
 		| statement:e  -> (pval `(let ((self '())) ,e))
 		| { expected "variable def, class def or stmt" }
 		;
-
 
   program	= __ (!"=end" toplevel)* "=end" ;
 
@@ -295,9 +301,6 @@ two = 3 ; three = 5
   (* three 7)
 )
 
-def foo(a, b)
-end
-
 class <long>
   def + (x)
     @((+ self x))
@@ -305,9 +308,29 @@ class <long>
   def * x
     @((* self x))
   end
+  def < x
+    @((< self x))
+  end
+  def > x
+    @((> self x))
+  end
+  def bar a, b
+    1
+  end
 end
 
 1 + 2 * 3 + 5
+
+1 < 2
+
+# 1.bar(3, 4)
+# two + three
+
+def foo a, b
+  1 + 2
+end
+
+foo(1, 2)
 
 =end
 
