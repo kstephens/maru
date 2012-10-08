@@ -47,7 +47,6 @@
   name ; TODO
   )
 
-
 (define-function %define-method (type name method)
   (let* ((dict (array-at %message-dictionaries type))
 	 (bind (or (assq name dict)
@@ -184,7 +183,9 @@
   idpart	= (letter (letter | digit)*) @ $$ ;
   identifier	= idpart:x _					                -> x ;
 
-  literal       = number | string ;
+  literal       = number | string
+                | ":" identifier:i -> (list 'quote i)
+                ;
 
   cappart       = (capletter (letter | digit)*) @ $$ ;
   capident      = cappart:x                                                     -> x ;
@@ -203,7 +204,7 @@
                 ;
 
   assignment	= identifier:i "="__ expression:e				-> `(set ,i ,e)
-#                | term_expr:r "["__ arguments:a "]" __ "=" __ expression:e     -> `(send '[]= ,r ,@a ,e)
+#                | term_expr:r "["__ arguments:a "]" __ "=" __ expression:e     -> `(send []= ,r ,@a ,e)
                 ;
 
   statements	= statement?:e statement*:f			                -> `(,@e ,@f) ;
@@ -215,31 +216,30 @@
                 ;
 
   rel_expr      = add_expr ; 
-#  rel_expr      = add_expr:a rel_op:op __ rel_expr:b  -> `(send ',op ,a ,b)
+#  rel_expr      = add_expr:a rel_op:op __ rel_expr:b  -> `(send ,op ,a ,b)
 #                | add_expr
 #                ;
   rel_op        = [<>=] @ $$ ;
 
-  add_expr      = term_expr:a add_op:op __ add_expr:b -> `(send ',op ,a ,b)
+  add_expr      = term_expr:a add_op:op __ add_expr:b -> `(send ,op ,a ,b)
                 | term_expr
                 ;
   add_op        = [-+] @ $$ ;
 
-  term_expr     = unary_expr:a term_op:op __ term_expr:b  -> `(send ',op ,a ,b)
+  term_expr     = unary_expr:a term_op:op __ term_expr:b  -> `(send ,op ,a ,b)
                 | unary_expr
                 ;
   term_op       = [*/%] @ $$ ;
 
-  unary_expr    = unary_op:op __ expression:e  -> `(send ',op ,e)
+  unary_expr    = unary_op:op __ expression:e  -> `(send ,op ,e)
                 | primary_expr
                 ;
   unary_op      = [-!~] @ $$ ;
 
   primary_expr  = "("__ expression:e ")"_ -> e
-#               | expression:r "["__ arguments:a "]" -> `(send '[] ,r ,@a)
+#               | expression:r "["__ arguments:a "]" -> `(send [] ,r ,@a)
                 | ssexpr
 #                | identifier
-                | ":" identifier:i -> (list 'quote i)
                 | literal
                 ;
 
