@@ -1,6 +1,6 @@
-; (require "parser.l")
-;; (require "peg-compile.l")
-;; (require "peg.l")
+(require "parser.l")
+(require "peg-compile.l")
+(require "peg.l")
 
 ;;; message
 
@@ -38,6 +38,15 @@
   (apply (or (array-at (<message-send>-methods self) (type-of (car arguments)))
 	     (message-send-lookup self arguments))
 	 arguments))
+
+(define-function %define-class (name)
+  name ; TODO
+  )
+
+(define-function %define-module (name)
+  name ; TODO
+  )
+
 
 (define-function %define-method (type name method)
   (let* ((dict (array-at %message-dictionaries type))
@@ -102,7 +111,7 @@
     v))
 
 (define-function repl-stream (stream prompt)	(repl-parser-stream (parser-stream stream) prompt))
-(define-function repl-file   (file prompt)	(repl-stream (input-stream file) prompt))
+(define-function repl-file   (file prompt)	(repl-stream (input-stream file file) prompt))
 (define-function repl-path   (path prompt)	(repl-file (or (open path) (error "cannot open: "path)) prompt))
 
 (repl-file *input* ())
@@ -147,121 +156,158 @@
 		| "`"  sexpr:e				-> (list 'quasiquote e)
 		| ",@" sexpr:e				-> (list 'unquote-splicing e)
 		| ","  sexpr:e				-> (list 'unquote e)
-		| ";" (![\n\r] .)*
 		;
 
-  sexpression	= sexpr:s _				-> s ;
+  sexpression	= sexpr:s sspace -> s ;
 
 ##----------------
 
   blank		= [\t ] ;
   eol		= "\n""\r"* | "\r""\n"* ;
-  comment	= "\""(&.!"\"".)*"\""? ;
-  _		= (blank | eol | comment)* ;
+  comment	= "#" (!eol .)*
+                ;
+  eostmt        = (eol | ";")* ;
+  _stmt         = blank* eostmt (blank | comment)* ;
+  contline      = "\\" eol ;
+  _		= (blank | contline)* ;
+  __            = (blank | contline | comment | eol)* ;
 
   digit		= [0123456789] ;
   letter	= [ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz] ;
+  capletter     = [ABCDEFGHIJKLMNOPQRSTUVWXYZ] ;
   binchar	= [!%&*+,-/<=>?@\\^`|~] ;
 
   number	= digit+ $#:x _							-> x ;
 
-  string	= "'" (&."''"->?' | !"'".)* @$:x "'" _				-> x ;
+  string	= "\""	(!"\""	char)* $:e "\""		                        -> e ;
 
   idpart	= (letter (letter | digit)*) @ $$ ;
-  identifier	= idpart:x !":" _						-> x ;
+  identifier	= idpart:x _					                -> x ;
 
-  unypart	= (letter (letter | digit)*) @ $$ ;
-  unysel	= unypart:x !":" _						-> x ;
+  literal       = number | string ;
 
-  binpart	= binchar+ @ $$ ;
-  binsel	= binpart:x _							-> x ;
+  cappart       = (capletter (letter | digit)*) @ $$ ;
+  capident      = cappart:x                                                     -> x ;
 
-  keypart	= (unypart":") @ $$ ;
-  keysel	= keypart:x _							-> x ;
-
-  blockargs	= (":"identifier)+:a "|"_					-> a
+  blockargs	= "|"_ identifiers:a "|"__				        -> a
 		|								-> ()
 		;
 
-  block		= "["_ blockargs:a statements:s "]"_				-> `(new-block ,(list-length a) (lambda ,a ,@s)) ;
+  identifiers   = identifier?:a (","__ identifier)*:l                           -> `(,@a ,@l) ;
+  arguments     = expression?:a (","__ expression)*:l                           -> `(,@a ,@l) ;
 
-  primary	= number | string | identifier | block ;
+  end           = "end"_stmt ;
 
-  unysend	= primary:r (unysel:s -> `(send ,s ,r):r)*			-> r ;
+  block		= "{"_ blockargs:a statements:s "}"_stmt                        -> `(new-block ,(list-length a) (lambda ,a ,@s))
+                | "do"_ blockargs:a statements:s end			        -> `(new-block ,(list-length a) (lambda ,a ,@s))
+                ;
 
-  binsend	= unysend:r (binsel:s unysend:a -> `(send ,s ,r ,a):r)*	-> r ;
+  assignment	= identifier:i "="__ expression:e				-> `(set ,i ,e)
+#                | term_expr:r "["__ arguments:a "]" __ "=" __ expression:e     -> `(send '[]= ,r ,@a ,e)
+                ;
 
-  keysend	= binsend:r ( (keysel: s binsend:a -> `(,s ,a))+:k		-> `(send ,(apply concat-symbols (map car k)) ,r ,@(map cadr k))
-			    |							-> r
-			    ) ;
+  statements	= statement?:e statement*:f			                -> `(,@e ,@f) ;
 
-  assignment	= identifier:i ":="_ expression:e				-> `(set ,i ,e) ;
+  expression	= tern_expr ;
 
-  expression	= assignment | keysend ;
+  tern_expr     = rel_expr:a "?"__ tern_expr:b ":"__ tern_expr:c -> `(if ,a ,b ,c) 
+                | rel_expr
+                ;
 
-  statements	= "|"_ identifier*:i "|"_ statements:s				-> `((let ,i ,@s))
-		| expression?:e (("."_)* expression)*:f				-> `(,@e ,@f) ;
+  rel_expr      = add_expr ; 
+#  rel_expr      = add_expr:a rel_op:op __ rel_expr:b  -> `(send ',op ,a ,b)
+#                | add_expr
+#                ;
+  rel_op        = [<>=] @ $$ ;
 
-  methodbody	= "["_ statements:s "]"_					-> s
-		| "{"_ sexpression*:s "}"_					-> s
+  add_expr      = term_expr:a add_op:op __ add_expr:b -> `(send ',op ,a ,b)
+                | term_expr
+                ;
+  add_op        = [-+] @ $$ ;
+
+  term_expr     = unary_expr:a term_op:op __ term_expr:b  -> `(send ',op ,a ,b)
+                | unary_expr
+                ;
+  term_op       = [*/%] @ $$ ;
+
+  unary_expr    = unary_op:op __ expression:e  -> `(send ',op ,e)
+                | primary_expr
+                ;
+  unary_op      = [-!~] @ $$ ;
+
+  primary_expr  = "("__ expression:e ")"_ -> e
+#               | expression:r "["__ arguments:a "]" -> `(send '[] ,r ,@a)
+                | ssexpr
+#                | identifier
+                | ":" identifier:i -> (list 'quote i)
+                | literal
+                ;
+
+  statement     = 
+                  def:d                                                         -> d
+                | "if"_ expression:t _ "then"?_stmt body:b end                  -> `(if ,t (let () ,@b))
+                | "unless"_ expression:t _ "then"?_stmt body:b end              -> `(if (not ,t) (let () ,@b))
+                | "while"_ expression:t _ "do"?_stmt body:b end                 -> `(while ,t ,@b)
+                | "until"_ expression:t _ "do"?_stmt body:b end                 -> `(while (not ,t) ,@b)
+                | expression:e "if"_ expression:t _stmt                         -> `(if ,t ,e)
+                | expression:e "unless"_ expression:t _stmt                     -> `(if (not ,t) ,e)
+                | expression:e "while"_ expression:t _stmt                      -> `(while ,t ,e)
+                | expression:e "until"_ expression:t _stmt                      -> `(while (not ,t) ,e)
+                | expression:e _stmt                                            -> e
+                ;
+
+  body	        = statements:s 					                -> s ;
+  ssexpr        = "@(" sspace sexpression*:s ")"_					-> `(let () ,@s) ;
+
+  def           = "def"_ symbol:s parameters:a body:b end ->
+                   `(%define-method self ',s (lambda (self ,@a) ,@b))
+                | "def"_ expression:e "." symbol:s parameters:a body:b end ->
+                   `(%define-singleton-method ,e ',s (lambda (self ,@a) ,@b))
+                ;
+
+  parameters    = _ "("__ identifiers:a ")"_stmt     -> a
+                | blank+ identifiers:a _stmt         -> a
+                ;
+
+  typename	= capident | symbol ;
+
+  toplevel	= "class"_ typename:t __ body:b end
+                    -> (pval `(let ((self (%define-class ,t))) ,@b))
+                | identifier:i "="_ expression:e _stmt
+                    -> (pval `(define ,i ,e))
+		| statement:e  -> (pval `(let ((self '())) ,e))
+		| { expected "variable def, class def or stmt" }
 		;
 
-  typename	= identifier
-		| "<" identifier:i ">"_ -> (concat-symbols '< i '>)
-		;
 
-  pattern	= unysel:s							-> (list s)
-		| binsel:s identifier:i						-> (list s i)
-		| (keysel:s identifier:i -> (list s i))+:k 			-> (cons (apply concat-symbols (map car k)) (map cadr k))
-		;
-
-  definition	= identifier:i ":="_ expression:e "."_				-> (pval `(define ,i ,e))
-		| typename:t pattern:p methodbody:b				-> (pval `(%define-method ,t ',(car p) (lambda (self ,@(cdr p)) ,@b)))
-		| expression:e "."_						-> (pval e)
-		| { expected "definition or expression" }
-		;
-
-  program	= _ (!"." definition)* "." ;
+  program	= __ (!"=end" toplevel)* "=end" ;
 
   program
 }
 
-one := 2.
-two := 21.
-three := one * two.
+123
+one = 2
+two = 3 ; three = 5
+:symbol
+@(
+  ; in lisp
+  (+ 1 (* 2 3))
+  (* three 7)
+)
 
-<long> zero			[ 0 ]
-<long> one			[ 1 ]
-<long> + aNumber		{ (+ self aNumber) }
-<long> <= aNumber		{ (<= self aNumber) }
-<long> doubled			[ self + self ]
+def foo(a, b)
+end
 
-<long>   println		{ (println self) }
-<string> println		{ (println self) }
+class <long>
+  def + (x)
+    @((+ self x))
+  end
+  def * x
+    @((* self x))
+  end
+end
 
-<block> value			{ ((<block>-expr self)) }
-<block> value: a		{ ((<block>-expr self) a) }
-<block> value: a value: b	{ ((<block>-expr self) a b) }
-<block> valueWithArguments: a	{ (apply (<block>-expr self) a) }
+1 + 2 * 3 + 5
 
-<block> whileTrue: b		{ (while (send value self) (send value b)) }
+=end
 
-42 zero.
-42 one.
-21 doubled.
-
-[ :a :b | a + b ].
-[ :a :b | a + b ] value: 3 value: 4.
-
-<long> to: a do: b		[ | i | i := self.  [i <= a] whileTrue: [b value.  i := i + 1] ]
-<long> to: a withIndexDo: b	[ | i | i := self.  [i <= a] whileTrue: [b value: i.  i := i + 1] ]
-
-1 to: 10 do: ['hello' println].
-1 to: 10 withIndexDo: [:i | i println].
-
-"'this is a string' toUpperCase 3 + 4 + 5 negated - 9 printOn: stdout"
-.
-
-"(map-with repl-path *arguments* ())"
-
-"(exit 0)"
