@@ -238,7 +238,6 @@
   unary_op      = [-!~] @ $$ ;
 
   send_expr     = identifier:s "("__ arguments:a ")"  -> `(send ,s self ,@a)
-#                | send_expr:r "." identifier:s "(" arguments:a ")"  -> `(send ,s ,r ,@a)
                 | group_expr
                 ;
 
@@ -247,6 +246,7 @@
                 ;
 
   primary_expr  = ssexpr | literal
+#                | identifier
                 ;
 
   statement     = 
@@ -323,14 +323,16 @@ end
 
 1 < 2
 
-# 1.bar(3, 4)
 # two + three
+# foo bar
 
 def foo a, b
   1 + 2
 end
 
 foo(1, 2)
+
+# 1.bar(3, 4)
 
 =end
 
